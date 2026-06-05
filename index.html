@@ -213,25 +213,24 @@ tbody tr:hover{background:#f5e6c8}
     <div class="aviso-api">🔑 La clave Anthropic se guarda en Config (solo en tu iPhone). Sin clave no funciona el escaneo.</div>
     <div class="alert" id="al-scan"></div>
 
-    <p style="font-size:.82rem;color:var(--gris);margin-bottom:14px;line-height:1.6">
-      Toma una foto de tu planilla física <strong>FR-PRO-AR-01</strong> y la IA leerá automáticamente todos los datos: fecha, insumos, producción y más.
-    </p>
-
     <div class="scan-drop" id="drop-zone" onclick="document.getElementById('file-scan').click()">
-      <div style="font-size:2.2rem;margin-bottom:8px" id="scan-ico">📷</div>
-      <p style="font-weight:600;font-size:.95rem" id="scan-title">Toca para fotografiar la planilla</p>
-      <p style="font-size:.76rem;color:var(--gris);margin-top:4px" id="scan-sub">La IA leerá los datos automáticamente</p>
+      <div style="font-size:2rem;margin-bottom:8px">📸</div>
+      <p style="font-weight:600">Toca para fotografiar la planilla</p>
+      <p style="font-size:.76rem;color:var(--gris);margin-top:4px">Formato FR-PRO-AR-01 · JPG, PNG, HEIC</p>
       <input type="file" id="file-scan" accept="image/*" capture="environment" onchange="prevScan(this)">
       <img id="prev-img" alt="Vista previa">
     </div>
 
+    <div class="spin" id="spin-scan"></div>
     <div class="ia-res" id="ia-res">
-      <div style="font-weight:600;color:var(--verde);margin-bottom:8px">✅ IA leyó estos datos — revisa en el formulario</div>
+      <div style="font-weight:600;color:var(--verde);margin-bottom:8px">✅ Datos extraídos por IA</div>
       <pre id="ia-txt"></pre>
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-ghost" onclick="limpiarScan()">🔄 Nueva foto</button>
+      <button class="btn btn-primary" onclick="escanearIA()">🤖 Analizar con IA</button>
+      <button class="btn btn-success" id="btn-aplicar" onclick="aplicarScan()" style="display:none">✔ Aplicar al formulario</button>
+      <button class="btn btn-ghost" onclick="limpiarScan()">🗑 Limpiar</button>
     </div>
   </div>
 </section>
@@ -1104,7 +1103,6 @@ function prevScan(input){
   var url = URL.createObjectURL(file);
   var imgEl = new Image();
   imgEl.onload = function(){
-    // Comprimir igual que app obleas: max 1200px, calidad 85%
     var MAX = 1200;
     var w = imgEl.width, h = imgEl.height;
     if(w > MAX){ h = Math.round(h * MAX / w); w = MAX; }
@@ -1118,13 +1116,6 @@ function prevScan(input){
     var prev = gId('prev-img');
     prev.src = dataUrl;
     prev.style.display = 'block';
-    // Cambiar UI a estado "analizando"
-    gId('scan-ico').textContent = '🔍';
-    gId('scan-title').textContent = 'Analizando con IA...';
-    gId('scan-sub').textContent = 'Esto toma unos segundos';
-    gId('drop-zone').style.cursor = 'default';
-    // Auto-analizar y aplicar al formulario
-    escanearIAAuto();
   };
   imgEl.src = url;
 }
@@ -1133,33 +1124,20 @@ function limpiarScan(){
   gId('prev-img').style.display = 'none';
   gId('prev-img').src = '';
   gId('ia-res').style.display = 'none';
+  gId('btn-aplicar').style.display = 'none';
   gId('file-scan').value = '';
   scanB64 = '';
   scanData = null;
-  // Resetear UI
-  gId('scan-ico').textContent = '📷';
-  gId('scan-title').textContent = 'Toca para fotografiar la planilla';
-  gId('scan-sub').textContent = 'La IA leerá los datos automáticamente';
-  gId('drop-zone').style.cursor = 'pointer';
 }
 
-function escanearIAAuto(){
-  // Espera un momento para que la imagen se muestre, luego analiza y aplica
-  setTimeout(function(){
-    var key = localStorage.getItem('dm_apikey') || '';
-    if(!key){ showAlert('al-scan','⚠ Configura tu clave API en ⚙️ Config','err'); return; }
-    escanearIA(true);
-  }, 400);
-}
-
-function escanearIA(autoAplicar){
+function escanearIA(){
   var key = localStorage.getItem('dm_apikey') || '';
   if(!key){ showAlert('al-scan','⚠ Configura tu clave API en la sección Config','err'); return; }
   if(!scanB64){ showAlert('al-scan','⚠ Primero selecciona o fotografía la planilla','err'); return; }
 
   gId('spin-scan').style.display = 'block';
   gId('ia-res').style.display = 'none';
-  gId('btn-aplicar').style.display = 'none';
+  if(gId('btn-aplicar')) gId('btn-aplicar').style.display = 'none';
 
   var insumosList = INSUMOS_DEF.map(function(i){
     return '"' + i.id + '": 0  // ' + i.nombre + ' (' + i.unidad + ')';
@@ -1210,10 +1188,7 @@ function escanearIA(autoAplicar){
       scanData = JSON.parse(match[0]);
       gId('ia-txt').textContent = JSON.stringify(scanData, null, 2);
       gId('ia-res').style.display = 'block';
-      gId('scan-ico').textContent = '✅';
-      gId('scan-title').textContent = 'Planilla leída correctamente';
-      gId('scan-sub').textContent = 'Datos cargados al formulario — revisa y guarda';
-      if(autoAplicar){ aplicarScan(); } else { gId('btn-aplicar').style.display = 'inline-flex'; }
+      gId('btn-aplicar').style.display = 'inline-flex';
     });
   }
 
@@ -1247,13 +1222,9 @@ function escanearIA(autoAplicar){
   })
   .catch(function(e){
     showAlert('al-scan','❌ Error IA: ' + e.message, 'err');
-    gId('scan-ico').textContent = '❌';
-    gId('scan-title').textContent = 'Error al analizar';
-    gId('scan-sub').textContent = e.message || 'Intenta de nuevo con mejor iluminación';
-    gId('drop-zone').style.cursor = 'pointer';
   })
   .finally(function(){
-    gId('spin-scan').style.display = 'none';
+    if(gId('spin-scan')) gId('spin-scan').style.display = 'none';
   });
 }
 
