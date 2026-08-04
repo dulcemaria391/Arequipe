@@ -131,6 +131,10 @@ tbody tr:hover{background:#f5e6c8}
 .periodo-card.pagado{border-left-color:var(--verde)}
 .mov-compra{color:var(--verde);font-weight:600}
 .mov-consumo{color:var(--rojo);font-weight:600}
+.prod-lote-row{background:var(--crema);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;font-size:.82rem}
+.prod-lote-row .lote-info{color:var(--gris);font-size:.72rem}
+.mov-entrada{color:var(--verde);font-weight:600}
+.mov-salida{color:var(--caramelo);font-weight:600}
 @media(max-width:580px){.kpi .val{font-size:1.2rem}main{padding:14px 10px 30px}.card{padding:14px}}
 </style>
 </head>
@@ -146,6 +150,7 @@ tbody tr:hover{background:#f5e6c8}
   <button onclick="tab('registro',this)">📋 Registro</button>
   <button onclick="tab('costos',this)">💰 Costos</button>
   <button onclick="tab('inventario',this)">📦 Inventario</button>
+  <button onclick="tab('productos',this)">🍯 Productos</button>
   <button onclick="tab('reportes',this)">📊 Reportes</button>
   <button onclick="tab('nomina',this)">👷 Nómina</button>
   <button onclick="tab('config',this)">⚙️ Config</button>
@@ -369,6 +374,59 @@ tbody tr:hover{background:#f5e6c8}
     </div>
     <div class="tw" id="tabla-inv-hist"></div>
   </div>
+</section>
+
+<!-- PRODUCTOS TERMINADOS -->
+<section id="sec-productos" class="sec">
+
+  <!-- KPIs stock disponible -->
+  <div class="kpi-grid" id="kpi-prod"></div>
+
+  <!-- Registrar salida a zona de venta -->
+  <div class="card">
+    <div class="card-header"><h2>🚚 Registrar salida a zona de venta</h2></div>
+    <div class="alert" id="al-prod"></div>
+    <div class="fg c3">
+      <div><label>Fecha de salida</label><input type="date" id="prod-fecha"></div>
+      <div>
+        <label>Presentación</label>
+        <select id="prod-tipo" onchange="prod_updatePreview()">
+          <option value="">Seleccionar...</option>
+          <option value="tetero">Aplicador 400g</option>
+          <option value="bolsa">Bolsa 500g</option>
+          <option value="tarrina">Tarrina 220g</option>
+        </select>
+      </div>
+      <div><label>Cantidad a sacar</label><input type="number" id="prod-cant" placeholder="0" min="1" oninput="prod_updatePreview()"></div>
+    </div>
+    <!-- Preview: stock actual y lo que quedará -->
+    <div id="prod-preview" style="display:none;background:var(--crema);border-radius:8px;padding:12px;margin-top:10px;font-size:.82rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div><div style="color:var(--gris);font-size:.72rem;text-transform:uppercase">Disponible</div><div id="prod-pre-actual" style="font-weight:700;color:var(--cafe)">—</div></div>
+        <div><div style="color:var(--gris);font-size:.72rem;text-transform:uppercase">Sale</div><div id="prod-pre-sale" style="font-weight:700;color:var(--rojo)">—</div></div>
+        <div><div style="color:var(--gris);font-size:.72rem;text-transform:uppercase">Quedará</div><div id="prod-pre-queda" style="font-weight:700;color:var(--verde)">—</div></div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-success" onclick="prod_registrarSalida()">✅ Registrar salida</button>
+    </div>
+  </div>
+
+  <!-- Stock por presentación con detalle de lotes -->
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between">
+      <h2>📦 Stock de producto terminado</h2>
+      <button class="btn btn-ghost btn-sm" onclick="prod_render()">🔄</button>
+    </div>
+    <div class="tw" id="tabla-prod-stock"></div>
+  </div>
+
+  <!-- Historial de movimientos -->
+  <div class="card">
+    <div class="card-header"><h2>📋 Historial de movimientos</h2></div>
+    <div class="tw" id="tabla-prod-hist"></div>
+  </div>
+
 </section>
 
 <!-- REPORTES -->
@@ -624,6 +682,7 @@ function tab(id,btn){
   if(id==='registro'){ buildInsumosForm(); renderTabla(); if(!gId('r-fecha').value) gId('r-fecha').value=hoy(); }
   if(id==='costos')    buildPreciosTable();
   if(id==='inventario'){ inv_buildSelects(); inv_render(); inv_renderHistorial(); inv_renderAlertas(); }
+  if(id==='productos') { prod_render(); prod_renderHist(); if(gId('prod-fecha')&&!gId('prod-fecha').value) gId('prod-fecha').value=hoy(); }
   if(id==='reportes')  setDefDates();
   if(id==='nomina')    { gId('nom-mes').value=hoy().slice(0,7); setTimeout(function(){ calcNomina(); nom_renderPeriodos(); },100); }
   if(id==='config')    cargarConfig();
@@ -669,11 +728,23 @@ function buildInsumosForm(){
       var nLib=localStorage.getItem('dm_insumo_libre')||'';
       tdN='<td><input type="text" id="ins-libre-nombre" value="'+nLib+'" placeholder="Escribir nombre" style="width:130px;font-size:.82rem" onblur="guardarNombreLibre(this.value)"></td>';
     } else {
-      tdN='<td><strong>'+ins.nombre+'</strong></td>';
+      // Resaltar leche en polvo con nota aclaratoria
+      var nota='';
+      if(ins.id==='leche_polvo'||ins.id==='leche_polvo2'){
+        nota='<div style="font-size:.68rem;color:var(--rojo);margin-top:2px">⚠ Ingresar en gramos (ej: 5kg = 5000g)</div>';
+      }
+      if(ins.id==='azucar'){
+        nota='<div style="font-size:.68rem;color:var(--gris);margin-top:2px">ej: 80kg = 80000g</div>';
+      }
+      if(ins.id==='har1'||ins.id==='har2'){
+        nota='<div style="font-size:.68rem;color:var(--gris);margin-top:2px">ej: 25kg = 25000g</div>';
+      }
+      tdN='<td><strong>'+ins.nombre+'</strong>'+nota+'</td>';
     }
-    html+='<tr>'+tdN+'<td>'+ins.unidad+'</td>'+
+    html+='<tr>'+tdN+
+      '<td style="color:var(--caramelo);font-weight:600">'+ins.unidad+'</td>'+
       '<td><input type="number" id="ins-'+ins.id+'" placeholder="0" step="any" oninput="calcCostos()" style="width:100px"></td>'+
-      '<td>'+fmt(p[ins.id]||ins.precio)+'</td>'+
+      '<td>'+fmt(p[ins.id]||ins.precio)+'/'+ins.unidad+'</td>'+
       '<td class="costo-cell" id="cins-'+ins.id+'">$0</td></tr>';
   });
   gId('tbody-insumos').innerHTML=html;
@@ -800,8 +871,10 @@ function guardarRegistro(){
     obs:gId('r-obs').value
   };
   var arr=getRegistros(); arr.unshift(reg); saveRegistros(arr);
-  // Descontar inventario automaticamente
+  // Descontar insumos del inventario automaticamente
   var alertasInv=inv_descontarConsumo(reg);
+  // Agregar producto terminado automaticamente
+  prod_entradaLote(reg);
   var msg='✅ Registro guardado';
   if(alertasInv.length) msg+=' · ⚠ Stock bajo: '+alertasInv.join(', ');
   showAlert('al-reg',msg,alertasInv.length?'err':'ok');
@@ -1338,7 +1411,7 @@ function aplicarScan(){
 function cargarConfig(){ var k=localStorage.getItem('dm_apikey')||''; if(k) gId('cfg-key').value=k; }
 function guardarKey(){ var k=gId('cfg-key').value.trim(); if(!k){ showAlert('al-cfg','⚠ Ingresa la clave','err'); return; } localStorage.setItem('dm_apikey',k); showAlert('al-cfg','✅ Clave guardada'); }
 function toggleKey(){ gId('cfg-key').type=gId('cfg-key').type==='password'?'text':'password'; }
-function backup(){ var d={registros:getRegistros(),precios:getPrecios(),inventario:inv_getStock(),movimientos:inv_getMov(),nom_periodos:nom_getPeriodos()}; var a=document.createElement('a'); a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(d,null,2)); a.download='backup_arequipe_'+hoy()+'.json'; a.click(); }
+function backup(){ var d={registros:getRegistros(),precios:getPrecios(),inventario:inv_getStock(),movimientos:inv_getMov(),nom_periodos:nom_getPeriodos(),prod_stock:prod_getStock(),prod_mov:prod_getMov()}; var a=document.createElement('a'); a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(d,null,2)); a.download='backup_arequipe_'+hoy()+'.json'; a.click(); }
 function restaurar(input){
   var file=input.files[0]; if(!file) return;
   if(!confirm('⚠ Esto reemplazará todos los datos actuales con el contenido del archivo. ¿Continuar?')){ input.value=''; return; }
@@ -1352,8 +1425,10 @@ function restaurar(input){
       if(d.inventario) localStorage.setItem('dm_ar_inv',JSON.stringify(d.inventario));
       if(d.movimientos) localStorage.setItem('dm_ar_mov',JSON.stringify(d.movimientos));
       if(d.nom_periodos) localStorage.setItem('dm_ar_nom_per',JSON.stringify(d.nom_periodos));
+      if(d.prod_stock) localStorage.setItem('dm_ar_prod',JSON.stringify(d.prod_stock));
+      if(d.prod_mov) localStorage.setItem('dm_ar_prod_mov',JSON.stringify(d.prod_mov));
       input.value='';
-      showAlert('al-cfg-datos','✅ Datos restaurados correctamente — '+count+' registros, inventario y nómina cargados.');
+      showAlert('al-cfg-datos','✅ Datos restaurados correctamente — '+count+' registros cargados.');
       renderInicio();
     } catch(err){
       showAlert('al-cfg-datos','❌ Archivo inválido. Asegúrate de seleccionar un backup de esta app.','err');
@@ -1456,7 +1531,7 @@ function inv_descontarConsumo(reg){
   INSUMOS_DEF.forEach(function(ins){
     var cant=reg.insumos?reg.insumos[ins.id]||0:0; if(cant<=0) return;
     var s=stock[ins.id]||{cantActual:0,costoPromedio:ins.precio,minimo:0};
-    if(s.cantActual>0&&s.cantActual<cant) alertas.push(inv_nombreIns(ins.id)+': stock '+fmtN(Math.round(s.cantActual))+', usado '+fmtN(cant));
+    if(s.cantActual<cant) alertas.push(inv_nombreIns(ins.id)+': stock '+fmtN(Math.round(s.cantActual))+', usado '+fmtN(cant));
     stock[ins.id]={cantActual:Math.max(0,s.cantActual-cant),costoPromedio:s.costoPromedio,minimo:s.minimo||0};
     mov.unshift({id:ts+'_'+ins.id,fecha:reg.fecha,ins_id:ins.id,tipo:'consumo',cant:cant,costoUnit:s.costoPromedio,costoPromDespues:s.costoPromedio,ref:'Lote '+(reg.lote||reg.fecha)});
   });
@@ -1464,7 +1539,7 @@ function inv_descontarConsumo(reg){
   EMPAQUES_DEF.forEach(function(e){
     var u=prod[e.campo]||0; if(u<=0) return;
     var s=stock[e.id]||{cantActual:0,costoPromedio:e.precio,minimo:0};
-    if(s.cantActual>0&&s.cantActual<u) alertas.push(e.nombre+': stock '+fmtN(Math.round(s.cantActual))+', usado '+fmtN(u));
+    if(s.cantActual<u) alertas.push(e.nombre+': stock '+fmtN(Math.round(s.cantActual))+', usado '+fmtN(u));
     stock[e.id]={cantActual:Math.max(0,s.cantActual-u),costoPromedio:s.costoPromedio,minimo:s.minimo||0};
     mov.unshift({id:ts+'_'+e.id,fecha:reg.fecha,ins_id:e.id,tipo:'consumo',cant:u,costoUnit:s.costoPromedio,costoPromDespues:s.costoPromedio,ref:'Lote '+(reg.lote||reg.fecha)});
   });
@@ -1476,16 +1551,28 @@ function inv_render(){
   h+='<tr style="background:var(--cafe);color:var(--crema)"><td colspan="7" style="padding:6px 10px;font-size:.72rem;font-weight:700;text-transform:uppercase">Materias primas</td></tr>';
   INSUMOS_DEF.forEach(function(ins){
     var s=stock[ins.id]; var cant=s?s.cantActual:0; var cpm=s?s.costoPromedio:(p[ins.id]||ins.precio); var min=s?s.minimo:0;
+    var tieneHistorial=s!==undefined; // si existe en stock, alguna vez tuvo datos
     kpiValor+=cant*cpm;
-    var estado=min>0&&cant<=0?'<span style="color:var(--rojo);font-weight:700">❌ Sin stock</span>':min>0&&cant<=min?'<span style="color:#7a4800;font-weight:700">⚠ Bajo</span>':cant>0?'<span style="color:var(--verde);font-weight:600">✓ OK</span>':'<span style="color:var(--gris)">Sin datos</span>';
-    h+='<tr><td><strong>'+inv_nombreIns(ins.id)+'</strong></td><td>'+ins.unidad+'</td><td style="font-weight:600">'+fmtN(Math.round(cant*10)/10)+'</td><td>'+fmt(cpm)+'</td><td style="color:var(--verde);font-weight:600">'+fmt(cant*cpm)+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
+    var estado;
+    if(cant<=0&&tieneHistorial) estado='<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>';
+    else if(min>0&&cant<=min) estado='<span style="color:#7a4800;font-weight:700">⚠ Bajo mínimo</span>';
+    else if(cant>0) estado='<span style="color:var(--verde);font-weight:600">✓ OK</span>';
+    else estado='<span style="color:var(--gris)">Sin datos</span>';
+    var cantTxt=cant>0?fmtN(Math.round(cant*10)/10):'<strong style="color:var(--rojo)">0</strong>';
+    h+='<tr><td><strong>'+inv_nombreIns(ins.id)+'</strong></td><td>'+ins.unidad+'</td><td style="font-weight:600">'+cantTxt+'</td><td>'+fmt(cpm)+'</td><td style="color:var(--verde);font-weight:600">'+fmt(cant*cpm)+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
   });
   h+='<tr style="background:var(--cafe2);color:var(--crema)"><td colspan="7" style="padding:6px 10px;font-size:.72rem;font-weight:700;text-transform:uppercase">Empaques y adhesivos</td></tr>';
   EMPAQUES_DEF.forEach(function(e){
     var s=stock[e.id]; var cant=s?s.cantActual:0; var cpm=s?s.costoPromedio:(p[e.id]||e.precio); var min=s?s.minimo:0;
+    var tieneHistorial=s!==undefined;
     kpiValor+=cant*cpm;
-    var estado=min>0&&cant<=0?'<span style="color:var(--rojo);font-weight:700">❌ Sin stock</span>':min>0&&cant<=min?'<span style="color:#7a4800;font-weight:700">⚠ Bajo</span>':cant>0?'<span style="color:var(--verde);font-weight:600">✓ OK</span>':'<span style="color:var(--gris)">Sin datos</span>';
-    h+='<tr><td><strong>'+e.nombre+'</strong></td><td>'+e.unidad+'</td><td style="font-weight:600">'+fmtN(Math.round(cant))+'</td><td>'+fmt(cpm)+'</td><td style="color:var(--verde);font-weight:600">'+fmt(cant*cpm)+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
+    var estado;
+    if(cant<=0&&tieneHistorial) estado='<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>';
+    else if(min>0&&cant<=min) estado='<span style="color:#7a4800;font-weight:700">⚠ Bajo mínimo</span>';
+    else if(cant>0) estado='<span style="color:var(--verde);font-weight:600">✓ OK</span>';
+    else estado='<span style="color:var(--gris)">Sin datos</span>';
+    var cantTxt=cant>0?fmtN(Math.round(cant)):'<strong style="color:var(--rojo)">0</strong>';
+    h+='<tr><td><strong>'+e.nombre+'</strong></td><td>'+e.unidad+'</td><td style="font-weight:600">'+cantTxt+'</td><td>'+fmt(cpm)+'</td><td style="color:var(--verde);font-weight:600">'+fmt(cant*cpm)+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
   });
   h+='</tbody></table>';
   if(gId('tabla-inv')) gId('tabla-inv').innerHTML=h;
@@ -1606,6 +1693,144 @@ function nom_liquidarPeriodo(){
   nom_savePeriodos(periodos);
   showAlert('al-nom-per','✅ Período liquidado.');
   nom_renderPeriodos();
+}
+
+/* ===== PRODUCTOS TERMINADOS =====
+   dm_ar_prod     → {tetero:{cant, costoPromedio}, bolsa:{...}, tarrina:{...}}
+   dm_ar_prod_mov → [{id, fecha, tipo:'entrada'|'salida', presentacion, cant, costoUnit, lote, ref}]
+*/
+function prod_getStock(){ try{ return JSON.parse(localStorage.getItem('dm_ar_prod')||'{}'); }catch(e){ return {}; } }
+function prod_saveStock(o){ localStorage.setItem('dm_ar_prod',JSON.stringify(o)); }
+function prod_getMov(){ try{ return JSON.parse(localStorage.getItem('dm_ar_prod_mov')||'[]'); }catch(e){ return []; } }
+function prod_saveMov(a){ localStorage.setItem('dm_ar_prod_mov',JSON.stringify(a)); }
+
+var PROD_NOMBRES = {tetero:'Aplicador 400g', bolsa:'Bolsa 500g', tarrina:'Tarrina 220g'};
+
+// Llamado automaticamente al guardar registro de produccion
+function prod_entradaLote(reg){
+  var stock=prod_getStock();
+  var mov=prod_getMov();
+  var ts=Date.now();
+  ['tetero','bolsa','tarrina'].forEach(function(tipo){
+    var cant=reg.produccion[tipo]||0;
+    if(cant<=0) return;
+    var costoUnit=reg.costoUnit?reg.costoUnit[tipo]||0:0;
+    var s=stock[tipo]||{cant:0,costoPromedio:0};
+    // Costo promedio ponderado entre stock existente y nueva entrada
+    var cantNueva=s.cant+cant;
+    var cpmNuevo=cantNueva>0?((s.cant*s.costoPromedio)+(cant*costoUnit))/cantNueva:costoUnit;
+    stock[tipo]={cant:cantNueva,costoPromedio:cpmNuevo};
+    mov.unshift({id:ts+'_'+tipo,fecha:reg.fecha,tipo:'entrada',presentacion:tipo,
+      cant:cant,costoUnit:costoUnit,lote:reg.lote||'',ref:'Lote '+(reg.lote||reg.fecha)});
+  });
+  prod_saveStock(stock);
+  prod_saveMov(mov);
+}
+
+// Registrar salida manual a zona de venta
+function prod_registrarSalida(){
+  var fecha=gId('prod-fecha').value;
+  var tipo=gId('prod-tipo').value;
+  var cant=parseInt(gId('prod-cant').value)||0;
+  if(!fecha){ showAlert('al-prod','⚠ Ingresa la fecha','err'); return; }
+  if(!tipo){ showAlert('al-prod','⚠ Selecciona la presentación','err'); return; }
+  if(cant<=0){ showAlert('al-prod','⚠ Ingresa una cantidad mayor a 0','err'); return; }
+  var stock=prod_getStock();
+  var s=stock[tipo]||{cant:0,costoPromedio:0};
+  if(s.cant<cant){
+    showAlert('al-prod','⚠ No hay suficiente stock. Disponible: '+fmtN(s.cant)+' unidades','err');
+    return;
+  }
+  stock[tipo]={cant:s.cant-cant,costoPromedio:s.costoPromedio};
+  prod_saveStock(stock);
+  var mov=prod_getMov();
+  mov.unshift({id:Date.now(),fecha:fecha,tipo:'salida',presentacion:tipo,
+    cant:cant,costoUnit:s.costoPromedio,lote:'',ref:'Salida a venta'});
+  prod_saveMov(mov);
+  gId('prod-cant').value='';
+  gId('prod-tipo').value='';
+  gId('prod-preview').style.display='none';
+  showAlert('al-prod','✅ Salida registrada. '+fmtN(cant)+' '+PROD_NOMBRES[tipo]+' enviados a zona de venta.');
+  prod_render();
+  prod_renderHist();
+}
+
+// Preview al cambiar tipo o cantidad
+function prod_updatePreview(){
+  var tipo=gId('prod-tipo').value;
+  var cant=parseInt(gId('prod-cant').value)||0;
+  var prev=gId('prod-preview');
+  if(!tipo||cant<=0){ prev.style.display='none'; return; }
+  var stock=prod_getStock();
+  var s=stock[tipo]||{cant:0,costoPromedio:0};
+  gId('prod-pre-actual').textContent=fmtN(s.cant)+' und';
+  gId('prod-pre-sale').textContent='-'+fmtN(cant)+' und';
+  var queda=s.cant-cant;
+  gId('prod-pre-queda').textContent=fmtN(queda>=0?queda:0)+' und'+(queda<0?' ⚠':'');
+  gId('prod-pre-queda').style.color=queda<0?'var(--rojo)':'var(--verde)';
+  prev.style.display='block';
+}
+
+function prod_render(){
+  var stock=prod_getStock();
+  var mov=prod_getMov();
+  // KPIs
+  var kpiHtml='';
+  ['tetero','bolsa','tarrina'].forEach(function(tipo){
+    var s=stock[tipo]||{cant:0,costoPromedio:0};
+    kpiHtml+='<div class="kpi"><div class="val">'+fmtN(s.cant)+'</div>'+
+      '<div class="lbl">'+PROD_NOMBRES[tipo]+'</div>'+
+      (s.costoPromedio>0?'<div style="font-size:.68rem;color:var(--gris);margin-top:4px">Costo prom: '+fmt(s.costoPromedio)+'</div>':'')+
+      '</div>';
+  });
+  // Valor total en inventario
+  var valorTotal=(['tetero','bolsa','tarrina']).reduce(function(a,t){
+    var s=stock[t]||{cant:0,costoPromedio:0}; return a+s.cant*s.costoPromedio;
+  },0);
+  kpiHtml='<div class="kpi destacado"><div class="val">'+fmt(valorTotal)+'</div><div class="lbl">Valor total stock</div></div>'+kpiHtml;
+  if(gId('kpi-prod')) gId('kpi-prod').innerHTML=kpiHtml;
+
+  // Tabla de stock detallada
+  var h='<table><thead><tr><th>Presentación</th><th>Stock disponible</th><th>Costo prom. unitario</th><th>Valor total</th><th>Estado</th></tr></thead><tbody>';
+  ['tetero','bolsa','tarrina'].forEach(function(tipo){
+    var s=stock[tipo]||{cant:0,costoPromedio:0};
+    var estado=s.cant<=0?
+      '<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>':
+      s.cant<=10?'<span style="color:#7a4800;font-weight:700">⚠ Poco stock</span>':
+      '<span style="color:var(--verde);font-weight:600">✓ Disponible</span>';
+    var cantTxt=s.cant>0?fmtN(s.cant):'<strong style="color:var(--rojo)">0</strong>';
+    h+='<tr>'+
+      '<td><strong>'+PROD_NOMBRES[tipo]+'</strong></td>'+
+      '<td>'+cantTxt+' und</td>'+
+      '<td>'+(s.costoPromedio>0?fmt(s.costoPromedio):'—')+'</td>'+
+      '<td style="color:var(--verde);font-weight:600">'+fmt(s.cant*s.costoPromedio)+'</td>'+
+      '<td>'+estado+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  if(gId('tabla-prod-stock')) gId('tabla-prod-stock').innerHTML=h;
+}
+
+function prod_renderHist(){
+  var mov=prod_getMov().slice(0,100);
+  if(!mov.length){
+    if(gId('tabla-prod-hist')) gId('tabla-prod-hist').innerHTML='<div class="empty"><div class="ei">📋</div><p>Sin movimientos aún.</p></div>';
+    return;
+  }
+  var h='<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Presentación</th><th>Cantidad</th><th>Costo unit.</th><th>Referencia</th></tr></thead><tbody>';
+  mov.forEach(function(m){
+    var esEntrada=m.tipo==='entrada';
+    var cls=esEntrada?'mov-entrada':'mov-salida';
+    var sg=esEntrada?'↓ Entrada':'↑ Salida';
+    h+='<tr>'+
+      '<td>'+m.fecha+'</td>'+
+      '<td><span class="'+cls+'">'+sg+'</span></td>'+
+      '<td>'+PROD_NOMBRES[m.presentacion]+'</td>'+
+      '<td class="'+cls+'">'+(esEntrada?'+':'-')+fmtN(m.cant)+' und</td>'+
+      '<td>'+fmt(m.costoUnit)+'</td>'+
+      '<td style="font-size:.75rem;color:var(--gris)">'+m.ref+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  if(gId('tabla-prod-hist')) gId('tabla-prod-hist').innerHTML=h;
 }
 
 document.addEventListener('DOMContentLoaded',function(){
