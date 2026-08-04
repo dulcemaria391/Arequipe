@@ -1276,7 +1276,9 @@ function generarReporte(){
 function exportCSV(arr){
   var rows=arr.map(function(r){ return [r.fecha,r.tipo||'',r.lote||'',r.produccion.tetero,r.produccion.bolsa,r.produccion.tarrina,(r.insumos?((r.insumos.leche_liq||0)+((r.insumos.leche_polvo||0)/1000*8.3)+((r.insumos.leche_polvo2||0)/1000*8.3)):0).toFixed(1),r.gasCons,r.valorGramo?r.valorGramo.toFixed(2):0,r.costos?r.costos.total:0,(r.obs||'').replace(/,/g,' ')].join(','); });
   var csv='Fecha,Tipo,Lote,Aplicadores,Bolsas,Tarrinas,LecheL,GasM3,ValorGramo,CostoTotal,Observaciones\n'+rows.join('\n');
-  var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv); a.download='arequipe_registros.csv'; a.click();
+  var blob='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  var w=window.open('','_blank');
+  if(w){ w.document.write('<html><head><meta charset="UTF-8"><title>Registros CSV</title></head><body style="font-family:sans-serif;padding:16px"><h3>📥 Registros Arequipe</h3><p style="color:#666;font-size:.85rem">Toca el enlace → compartir → Guardar en Archivos</p><a href="'+blob+'" download="arequipe_registros.csv" style="background:#C87533;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;margin-top:8px">📥 arequipe_registros.csv</a></body></html>'); w.document.close(); }
 }
 function exportCSVRep(){
   var desde=normFecha(gId('rep-desde').value), hasta=normFecha(gId('rep-hasta').value);
@@ -1319,7 +1321,9 @@ function exportNomina(){
   var angelTot=((parseFloat(gId('nom-angel-dia').value)||62000)+(parseFloat(gId('nom-angel-bono').value)||5000))*dias;
   var tonyTot=(parseFloat(gId('nom-tony-dia').value)||30000)*dias;
   var csv='Empleado,Cargo,Turnos,Total\nÁngel,Operario,'+dias+','+angelTot+'\nTony,Supervisor,'+dias+','+tonyTot;
-  var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv); a.download='nomina_arequipe.csv'; a.click();
+  var blob='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  var w=window.open('','_blank');
+  if(w){ w.document.write('<html><head><meta charset="UTF-8"><title>Nómina CSV</title></head><body style="font-family:sans-serif;padding:16px"><h3>📥 Nómina Arequipe</h3><p style="color:#666;font-size:.85rem">Toca el enlace → compartir → Guardar en Archivos</p><a href="'+blob+'" download="nomina_arequipe.csv" style="background:#2A6B4A;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block;margin-top:8px">📥 nomina_arequipe.csv</a></body></html>'); w.document.close(); }
 }
 
 var scanB64='', scanData=null;
@@ -1411,7 +1415,35 @@ function aplicarScan(){
 function cargarConfig(){ var k=localStorage.getItem('dm_apikey')||''; if(k) gId('cfg-key').value=k; }
 function guardarKey(){ var k=gId('cfg-key').value.trim(); if(!k){ showAlert('al-cfg','⚠ Ingresa la clave','err'); return; } localStorage.setItem('dm_apikey',k); showAlert('al-cfg','✅ Clave guardada'); }
 function toggleKey(){ gId('cfg-key').type=gId('cfg-key').type==='password'?'text':'password'; }
-function backup(){ var d={registros:getRegistros(),precios:getPrecios(),inventario:inv_getStock(),movimientos:inv_getMov(),nom_periodos:nom_getPeriodos(),prod_stock:prod_getStock(),prod_mov:prod_getMov()}; var a=document.createElement('a'); a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(d,null,2)); a.download='backup_arequipe_'+hoy()+'.json'; a.click(); }
+function backup(){
+  var d={registros:getRegistros(),precios:getPrecios(),inventario:inv_getStock(),movimientos:inv_getMov(),nom_periodos:nom_getPeriodos(),prod_stock:prod_getStock(),prod_mov:prod_getMov()};
+  var json=JSON.stringify(d,null,2);
+  var blob='data:application/json;charset=utf-8,'+encodeURIComponent(json);
+  // Safari iOS no soporta a.click() para descargas
+  // Abrimos en nueva pestaña y el usuario guarda desde ahi
+  var w=window.open('','_blank');
+  if(w){
+    w.document.write('<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Backup Arequipe '+hoy()+'</title></head><body style="font-family:sans-serif;padding:16px;background:#fffdf8">');
+    w.document.write('<h2 style="color:#2C1A0E">💾 Backup Dulce María — '+hoy()+'</h2>');
+    w.document.write('<p style="color:#8A7060;font-size:.9rem;margin-bottom:12px">Para guardar: toca el botón compartir (□↑) → <strong>Guardar en Archivos</strong></p>');
+    w.document.write('<a href="'+blob+'" download="backup_arequipe_'+hoy()+'.json" style="display:inline-block;background:#C87533;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;margin-bottom:16px">📥 Descargar backup_arequipe_'+hoy()+'.json</a>');
+    w.document.write('<details><summary style="cursor:pointer;color:#2C1A0E;font-weight:600;margin-top:8px">Ver contenido del backup</summary><pre style="font-size:.7rem;background:#f5e6c8;padding:12px;border-radius:8px;overflow:auto;max-height:400px">'+json.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</pre></details>');
+    w.document.write('</body></html>');
+    w.document.close();
+  } else {
+    // Si el popup fue bloqueado, mostrar el JSON directamente
+    var el=gId('backup-output');
+    if(!el){
+      el=document.createElement('div');
+      el.id='backup-output';
+      el.style.cssText='margin-top:12px;background:#f5e6c8;border-radius:8px;padding:12px;font-size:.72rem;word-break:break-all;max-height:200px;overflow-y:auto;border:1px solid #C87533';
+      gId('al-cfg-datos').parentNode.insertBefore(el,gId('al-cfg-datos').nextSibling);
+    }
+    el.innerHTML='<div style="font-weight:700;color:#2C1A0E;margin-bottom:8px">📋 Copia este texto y pégalo en Notas del iPhone para guardar el backup:</div><textarea style="width:100%;height:120px;font-size:.65rem;border:none;background:transparent" onclick="this.select()">'+ json +'</textarea>';
+    el.style.display='block';
+    showAlert('al-cfg-datos','⚠ Popup bloqueado. Copia el texto de abajo y guárdalo en Notas.','err');
+  }
+}
 function restaurar(input){
   var file=input.files[0]; if(!file) return;
   if(!confirm('⚠ Esto reemplazará todos los datos actuales con el contenido del archivo. ¿Continuar?')){ input.value=''; return; }
@@ -1603,33 +1635,50 @@ function inv_renderAlertas(){
   div.innerHTML=html;
 }
 function inv_cargarInventarioInicial(){
-  if(!confirm('⚠ Cargará el inventario inicial de Dulce María (corte 16 jun 2025). ¿Continuar?')) return;
-  var fecha='2025-06-16';
+  if(!confirm('⚠ Cargará el inventario inicial de Dulce María (corte 1 ago 2026). Si ya tienes datos de inventario, serán reemplazados. ¿Continuar?')) return;
+  var fecha='2026-08-01';
   var inicial=[
-    {id:'leche_liq',cant:120,costo:2800},{id:'leche_polvo',cant:50000,costo:18},
-    {id:'azucar',cant:100000,costo:4},{id:'bicarb',cant:1000,costo:8},
-    {id:'lac_gotas',cant:200,costo:140},{id:'mono',cant:15000,costo:16},
-    {id:'carg',cant:5000,costo:102.5},{id:'glucosa',cant:5000,costo:15},
-    {id:'goma',cant:1000,costo:30},{id:'citra',cant:1000,costo:15},
-    {id:'nata',cant:100,costo:300},{id:'anti_moho',cant:0,costo:10},
-    {id:'bs',cant:1000,costo:20},{id:'sp',cant:1000,costo:35},
-    {id:'sd',cant:0,costo:10},{id:'psd',cant:0,costo:10},
-    {id:'har1',cant:25000,costo:9.8},{id:'har2',cant:10000,costo:9.8},
-    {id:'malto',cant:0,costo:9.8},{id:'fecula',cant:0,costo:6},
-    {id:'cmc',cant:1000,costo:12},{id:'otro1',cant:1000,costo:12},
-    {id:'otro2',cant:500,costo:19},
-    {id:'emp_tetero',cant:600,costo:1050},{id:'emp_tarrina',cant:200,costo:300},
-    {id:'emp_bolsa',cant:500,costo:400},{id:'adh_tetero',cant:1000,costo:160},
-    {id:'adh_bolsa',cant:1000,costo:160},{id:'adh_tarrina',cant:0,costo:120}
+    // Materias primas
+    {id:'leche_liq',    cant:110,    costo:2800},
+    {id:'leche_polvo',  cant:0,      costo:18},
+    {id:'leche_polvo2', cant:26000,  costo:53},
+    {id:'azucar',       cant:100000, costo:4},
+    {id:'bicarb',       cant:2000,   costo:8},
+    {id:'lac_gotas',    cant:0,      costo:140},
+    {id:'mono',         cant:9500,   costo:16},
+    {id:'carg',         cant:1940,   costo:102.5},
+    {id:'glucosa',      cant:6000,   costo:15},
+    {id:'goma',         cant:600,    costo:30},
+    {id:'citra',        cant:415,    costo:15},
+    {id:'nata',         cant:130,    costo:300},
+    {id:'anti_moho',    cant:0,      costo:10},
+    {id:'bs',           cant:1650,   costo:20},
+    {id:'sp',           cant:2000,   costo:35},
+    {id:'sd',           cant:0,      costo:10},
+    {id:'psd',          cant:0,      costo:10},
+    {id:'har1',         cant:3500,   costo:9.8},
+    {id:'har2',         cant:10000,  costo:9.8},
+    {id:'malto',        cant:0,      costo:9.8},
+    {id:'fecula',       cant:1000,   costo:6},
+    {id:'cmc',          cant:1000,   costo:12},
+    {id:'otro1',        cant:0,      costo:12},
+    {id:'otro2',        cant:1000,   costo:19},
+    // Empaques y adhesivos
+    {id:'emp_tetero',   cant:1250,   costo:1050},
+    {id:'emp_bolsa',    cant:700,    costo:400},
+    {id:'emp_tarrina',  cant:120,    costo:300},
+    {id:'adh_tetero',   cant:800,    costo:160},
+    {id:'adh_bolsa',    cant:1500,   costo:160},
+    {id:'adh_tarrina',  cant:120,    costo:120}
   ];
   var stock={}; var mov=[]; var precios=getPrecios();
   inicial.forEach(function(item){
     stock[item.id]={cantActual:item.cant,costoPromedio:item.costo,minimo:0};
     precios[item.id]=item.costo;
-    if(item.cant>0) mov.push({id:Date.now()+'_'+item.id,fecha:fecha,ins_id:item.id,tipo:'compra',cant:item.cant,costoUnit:item.costo,costoPromDespues:item.costo,prov:'',ref:'Inventario inicial 16-jun'});
+    if(item.cant>0) mov.push({id:Date.now()+'_'+item.id,fecha:fecha,ins_id:item.id,tipo:'compra',cant:item.cant,costoUnit:item.costo,costoPromDespues:item.costo,prov:'',ref:'Inventario inicial 1-ago-2026'});
   });
   inv_saveStock(stock); inv_saveMov(mov); savePrecios(precios);
-  alert('✅ Inventario inicial cargado. Ve a 📦 Inventario para verificar.');
+  alert('✅ Inventario inicial cargado (corte 1 ago 2026) con '+inicial.filter(function(i){ return i.cant>0; }).length+' ítems con stock. Ve a 📦 Inventario para verificar.');
 }
 
 /* ===== NOMINA PERIODOS 12 DIAS ===== */
