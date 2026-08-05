@@ -1545,16 +1545,27 @@ function inv_registrarCompra(){
   if(cant<=0){ showAlert('al-inv','⚠ Cantidad debe ser mayor a 0','err'); return; }
   if(costoUnit<=0){ showAlert('al-inv','⚠ Ingresa el costo','err'); return; }
   var stock=inv_getStock(); var s=stock[id]||{cantActual:0,costoPromedio:0,minimo:0};
-  var cantAct=s.cantActual||0; var cpmAct=s.costoPromedio||0;
+  var cantAct=s.cantActual; // puede ser negativo
+  var cpmAct=s.costoPromedio||0;
   var cantNueva=cantAct+cant;
-  var cpmNuevo=((cantAct*cpmAct)+(cant*costoUnit))/cantNueva;
+  var cpmNuevo;
+  if(cantAct<0){
+    // Stock negativo: la compra primero cancela la deuda, el resto forma el nuevo stock
+    // El costo promedio es el de la nueva compra (la deuda ya estaba valorada al costo anterior)
+    cpmNuevo=costoUnit;
+  } else {
+    // Stock positivo o cero: costo promedio ponderado normal
+    cpmNuevo=cantNueva>0?((cantAct*cpmAct)+(cant*costoUnit))/cantNueva:costoUnit;
+  }
   stock[id]={cantActual:cantNueva,costoPromedio:cpmNuevo,minimo:minimo||s.minimo||0};
   inv_saveStock(stock);
   var mov=inv_getMov();
   mov.unshift({id:Date.now(),fecha:fecha,ins_id:id,tipo:'compra',cant:cant,costoUnit:costoUnit,costoPromDespues:cpmNuevo,prov:prov,ref:'Compra'});
   inv_saveMov(mov);
   var precios=getPrecios(); precios[id]=cpmNuevo; savePrecios(precios);
-  showAlert('al-inv','✅ Compra registrada. Nuevo costo prom: '+fmt(cpmNuevo)+'/'+inv_unidadIns(id));
+  var msg='✅ Compra registrada. Stock: '+fmtN(Math.round(cantNueva*100)/100)+' '+inv_unidadIns(id);
+  if(cantAct<0) msg+=' (saldo negativo de '+fmtN(Math.abs(Math.round(cantAct)))+' cancelado)';
+  showAlert('al-inv',msg);
   gId('inv-cant').value=''; gId('inv-prov').value=''; gId('inv-preview').style.display='none';
   inv_render(); inv_renderHistorial(); inv_renderAlertas();
 }
@@ -1563,16 +1574,18 @@ function inv_descontarConsumo(reg){
   INSUMOS_DEF.forEach(function(ins){
     var cant=reg.insumos?reg.insumos[ins.id]||0:0; if(cant<=0) return;
     var s=stock[ins.id]||{cantActual:0,costoPromedio:ins.precio,minimo:0};
-    if(s.cantActual<cant) alertas.push(inv_nombreIns(ins.id)+': stock '+fmtN(Math.round(s.cantActual))+', usado '+fmtN(cant));
-    stock[ins.id]={cantActual:Math.max(0,s.cantActual-cant),costoPromedio:s.costoPromedio,minimo:s.minimo||0};
+    var nuevaCant=s.cantActual-cant; // permite negativos
+    if(nuevaCant<0) alertas.push(inv_nombreIns(ins.id)+': quedará en '+fmtN(Math.round(nuevaCant))+' (pendiente por comprar)');
+    stock[ins.id]={cantActual:nuevaCant,costoPromedio:s.costoPromedio,minimo:s.minimo||0};
     mov.unshift({id:ts+'_'+ins.id,fecha:reg.fecha,ins_id:ins.id,tipo:'consumo',cant:cant,costoUnit:s.costoPromedio,costoPromDespues:s.costoPromedio,ref:'Lote '+(reg.lote||reg.fecha)});
   });
   var prod=reg.produccion||{tetero:0,bolsa:0,tarrina:0};
   EMPAQUES_DEF.forEach(function(e){
     var u=prod[e.campo]||0; if(u<=0) return;
     var s=stock[e.id]||{cantActual:0,costoPromedio:e.precio,minimo:0};
-    if(s.cantActual<u) alertas.push(e.nombre+': stock '+fmtN(Math.round(s.cantActual))+', usado '+fmtN(u));
-    stock[e.id]={cantActual:Math.max(0,s.cantActual-u),costoPromedio:s.costoPromedio,minimo:s.minimo||0};
+    var nuevaCant=s.cantActual-u; // permite negativos
+    if(nuevaCant<0) alertas.push(e.nombre+': quedará en '+fmtN(Math.round(nuevaCant))+' (pendiente por comprar)');
+    stock[e.id]={cantActual:nuevaCant,costoPromedio:s.costoPromedio,minimo:s.minimo||0};
     mov.unshift({id:ts+'_'+e.id,fecha:reg.fecha,ins_id:e.id,tipo:'consumo',cant:u,costoUnit:s.costoPromedio,costoPromDespues:s.costoPromedio,ref:'Lote '+(reg.lote||reg.fecha)});
   });
   inv_saveStock(stock); inv_saveMov(mov); return alertas;
@@ -1583,28 +1596,34 @@ function inv_render(){
   h+='<tr style="background:var(--cafe);color:var(--crema)"><td colspan="7" style="padding:6px 10px;font-size:.72rem;font-weight:700;text-transform:uppercase">Materias primas</td></tr>';
   INSUMOS_DEF.forEach(function(ins){
     var s=stock[ins.id]; var cant=s?s.cantActual:0; var cpm=s?s.costoPromedio:(p[ins.id]||ins.precio); var min=s?s.minimo:0;
-    var tieneHistorial=s!==undefined; // si existe en stock, alguna vez tuvo datos
-    kpiValor+=cant*cpm;
+    var tieneHistorial=s!==undefined;
+    kpiValor+=Math.max(0,cant)*cpm; // solo suma positivos al valor
     var estado;
-    if(cant<=0&&tieneHistorial) estado='<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>';
+    if(cant<0) estado='<span style="color:var(--rojo);font-weight:700">⛔ Negativo</span>';
+    else if(cant===0&&tieneHistorial) estado='<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>';
     else if(min>0&&cant<=min) estado='<span style="color:#7a4800;font-weight:700">⚠ Bajo mínimo</span>';
     else if(cant>0) estado='<span style="color:var(--verde);font-weight:600">✓ OK</span>';
     else estado='<span style="color:var(--gris)">Sin datos</span>';
-    var cantTxt=cant>0?fmtN(Math.round(cant*10)/10):'<strong style="color:var(--rojo)">0</strong>';
-    h+='<tr><td><strong>'+inv_nombreIns(ins.id)+'</strong></td><td>'+ins.unidad+'</td><td style="font-weight:600">'+cantTxt+'</td><td>'+fmt(cpm)+'</td><td style="color:var(--verde);font-weight:600">'+fmt(cant*cpm)+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
+    var cantTxt=cant<0?'<strong style="color:var(--rojo)">'+fmtN(Math.round(cant*10)/10)+'</strong>':
+                cant===0?'<strong style="color:var(--rojo)">0</strong>':
+                fmtN(Math.round(cant*10)/10);
+    h+='<tr'+(cant<0?' style="background:#fde0dc"':'')+'><td><strong>'+inv_nombreIns(ins.id)+'</strong></td><td>'+ins.unidad+'</td><td style="font-weight:600">'+cantTxt+'</td><td>'+fmt(cpm)+'</td><td style="font-weight:600;color:'+(cant<0?'var(--rojo)':'var(--verde)')+'">'+fmt(Math.abs(cant)*cpm)+(cant<0?' (deuda)':'')+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
   });
   h+='<tr style="background:var(--cafe2);color:var(--crema)"><td colspan="7" style="padding:6px 10px;font-size:.72rem;font-weight:700;text-transform:uppercase">Empaques y adhesivos</td></tr>';
   EMPAQUES_DEF.forEach(function(e){
     var s=stock[e.id]; var cant=s?s.cantActual:0; var cpm=s?s.costoPromedio:(p[e.id]||e.precio); var min=s?s.minimo:0;
     var tieneHistorial=s!==undefined;
-    kpiValor+=cant*cpm;
+    kpiValor+=Math.max(0,cant)*cpm;
     var estado;
-    if(cant<=0&&tieneHistorial) estado='<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>';
+    if(cant<0) estado='<span style="color:var(--rojo);font-weight:700">⛔ Negativo</span>';
+    else if(cant===0&&tieneHistorial) estado='<span style="color:var(--rojo);font-weight:700">❌ Agotado</span>';
     else if(min>0&&cant<=min) estado='<span style="color:#7a4800;font-weight:700">⚠ Bajo mínimo</span>';
     else if(cant>0) estado='<span style="color:var(--verde);font-weight:600">✓ OK</span>';
     else estado='<span style="color:var(--gris)">Sin datos</span>';
-    var cantTxt=cant>0?fmtN(Math.round(cant)):'<strong style="color:var(--rojo)">0</strong>';
-    h+='<tr><td><strong>'+e.nombre+'</strong></td><td>'+e.unidad+'</td><td style="font-weight:600">'+cantTxt+'</td><td>'+fmt(cpm)+'</td><td style="color:var(--verde);font-weight:600">'+fmt(cant*cpm)+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
+    var cantTxt=cant<0?'<strong style="color:var(--rojo)">'+fmtN(Math.round(cant))+'</strong>':
+                cant===0?'<strong style="color:var(--rojo)">0</strong>':
+                fmtN(Math.round(cant));
+    h+='<tr'+(cant<0?' style="background:#fde0dc"':'')+'><td><strong>'+e.nombre+'</strong></td><td>'+e.unidad+'</td><td style="font-weight:600">'+cantTxt+'</td><td>'+fmt(cpm)+'</td><td style="font-weight:600;color:'+(cant<0?'var(--rojo)':'var(--verde)')+'">'+fmt(Math.abs(cant)*cpm)+(cant<0?' (deuda)':'')+'</td><td>'+(min>0?fmtN(min):'—')+'</td><td>'+estado+'</td></tr>';
   });
   h+='</tbody></table>';
   if(gId('tabla-inv')) gId('tabla-inv').innerHTML=h;
@@ -1626,11 +1645,17 @@ function inv_renderHistorial(){
 }
 function inv_renderAlertas(){
   var stock=inv_getStock(); var div=gId('inv-alertas'); if(!div) return; var html='';
-  var items=INSUMOS_DEF.map(function(i){ return {id:i.id,nombre:inv_nombreIns(i.id)}; }).concat(EMPAQUES_DEF.map(function(e){ return {id:e.id,nombre:e.nombre}; }));
+  var items=INSUMOS_DEF.map(function(i){ return {id:i.id,nombre:inv_nombreIns(i.id)}; })
+    .concat(EMPAQUES_DEF.map(function(e){ return {id:e.id,nombre:e.nombre}; }));
   items.forEach(function(item){
-    var s=stock[item.id]; if(!s||s.minimo<=0) return;
-    if(s.cantActual<=0) html+='<div class="alerta-stock">🚨 <strong>'+item.nombre+'</strong>: SIN STOCK</div>';
-    else if(s.cantActual<=s.minimo) html+='<div class="alerta-stock-warn">⚠ <strong>'+item.nombre+'</strong>: stock bajo ('+fmtN(Math.round(s.cantActual))+' '+inv_unidadIns(item.id)+') — mínimo: '+fmtN(s.minimo)+'</div>';
+    var s=stock[item.id]; if(!s) return;
+    if(s.cantActual<0){
+      html+='<div class="alerta-stock">⛔ <strong>'+item.nombre+'</strong>: negativo ('+fmtN(Math.round(s.cantActual))+' '+inv_unidadIns(item.id)+') — pendiente por comprar</div>';
+    } else if(s.minimo>0&&s.cantActual<=0){
+      html+='<div class="alerta-stock">🚨 <strong>'+item.nombre+'</strong>: SIN STOCK</div>';
+    } else if(s.minimo>0&&s.cantActual<=s.minimo){
+      html+='<div class="alerta-stock-warn">⚠ <strong>'+item.nombre+'</strong>: stock bajo ('+fmtN(Math.round(s.cantActual))+' '+inv_unidadIns(item.id)+') — mínimo: '+fmtN(s.minimo)+'</div>';
+    }
   });
   div.innerHTML=html;
 }
