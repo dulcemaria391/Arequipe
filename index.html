@@ -131,8 +131,11 @@ tbody tr:hover{background:#f5e6c8}
 .periodo-card.pagado{border-left-color:var(--verde)}
 .mov-compra{color:var(--verde);font-weight:600}
 .mov-consumo{color:var(--rojo);font-weight:600}
+.barra-inc{height:10px;border-radius:5px;display:inline-block;vertical-align:middle;transition:width .3s}
+.inc-row{display:grid;grid-template-columns:140px 80px 80px 80px 1fr;gap:6px;align-items:center;padding:5px 8px;border-radius:6px;font-size:.78rem}
+.inc-row:nth-child(even){background:rgba(0,0,0,.03)}
+.inc-header{font-size:.68rem;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.06em}
 .prod-lote-row{background:var(--crema);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;font-size:.82rem}
-.prod-lote-row .lote-info{color:var(--gris);font-size:.72rem}
 .mov-entrada{color:var(--verde);font-weight:600}
 .mov-salida{color:var(--caramelo);font-weight:600}
 @media(max-width:580px){.kpi .val{font-size:1.2rem}main{padding:14px 10px 30px}.card{padding:14px}}
@@ -462,6 +465,14 @@ tbody tr:hover{background:#f5e6c8}
         </div>
       </div>
       <div class="tw" id="tabla-rep"></div>
+    </div>
+    <!-- DESGLOSE DE COSTOS POR LOTE -->
+    <div class="card" id="card-desglose" style="display:none">
+      <div class="card-header" style="justify-content:space-between">
+        <h2>🧾 Desglose de costos — <span id="desglose-titulo">Lote</span></h2>
+        <button class="btn btn-ghost btn-sm" onclick="gId('card-desglose').style.display='none'">✕ Cerrar</button>
+      </div>
+      <div id="desglose-contenido"></div>
     </div>
   </div>
 </section>
@@ -1212,49 +1223,38 @@ function generarReporte(){
   var p5=getPrecios(); var margen5=(p5.margen_pvp||25)/100;
   var h='<table><thead><tr>'+
     '<th>Fecha</th><th>Lote</th><th>Aplic.</th><th>Bolsa</th><th>Tarrina</th>'+
-    '<th>Vr gramo prod.</th><th>Total gramos prod.</th>'+
-    '<th>Gramos presup.</th><th>Comparativo</th><th>Costo und prod.</th><th>Observaciones</th>'+
+    '<th>$/gramo</th><th>Gramos prod.</th><th>Gramos presup.</th><th>Comparativo</th>'+
+    '<th>Costo insumos</th><th>Costo empaque</th><th>Costo gas</th><th>Costo MO</th><th>Costo total lote</th>'+
+    '<th>Costo und (aplic.)</th><th>Costo und (bolsa)</th><th>Costo und (tarrina)</th>'+
+    '<th>Obs.</th><th></th>'+
     '</tr></thead><tbody>';
   arr.forEach(function(r){
     var vg=r.valorGramo||0;
     var grProd=r.grTot||0;
-    // Leche total usada (incluye conversion de leche en polvo)
     var lecheL=(r.insumos?r.insumos.leche_liq||0:0)+
                ((r.insumos?r.insumos.leche_polvo||0:0)/1000*8.3)+
                ((r.insumos?r.insumos.leche_polvo2||0:0)/1000*8.3);
-    // Gramos presupuestados: (litros usados / 100) * rendimiento por presentacion
-    // Tetero: 72000g/100L, Bolsa: 75000g/100L, Tarrina: 70000g/100L
-    // Solo se calcula para las presentaciones que se produjeron en el lote
-    var grPres = 0;
-    if(r.produccion.tetero>0 && r.produccion.bolsa===0 && r.produccion.tarrina===0){
-      grPres = (lecheL/100)*72000;
-    } else if(r.produccion.bolsa>0 && r.produccion.tetero===0 && r.produccion.tarrina===0){
-      grPres = (lecheL/100)*75000;
-    } else if(r.produccion.tarrina>0 && r.produccion.tetero===0 && r.produccion.bolsa===0){
-      grPres = (lecheL/100)*70000;
-    } else if(r.produccion.tetero>0 && r.produccion.bolsa>0){
-      // Mixto tetero+bolsa: promedio ponderado
-      var totMix1=r.produccion.tetero+r.produccion.bolsa;
-      grPres=(lecheL/100)*((72000*r.produccion.tetero+75000*r.produccion.bolsa)/totMix1);
-    } else if(r.produccion.tetero>0 && r.produccion.tarrina>0){
-      var totMix2=r.produccion.tetero+r.produccion.tarrina;
-      grPres=(lecheL/100)*((72000*r.produccion.tetero+70000*r.produccion.tarrina)/totMix2);
-    } else if(r.produccion.bolsa>0 && r.produccion.tarrina>0){
-      var totMix3=r.produccion.bolsa+r.produccion.tarrina;
-      grPres=(lecheL/100)*((75000*r.produccion.bolsa+70000*r.produccion.tarrina)/totMix3);
-    } else if(r.produccion.tetero>0||r.produccion.bolsa>0||r.produccion.tarrina>0){
-      // Triple mixto
-      var totMix4=r.produccion.tetero+r.produccion.bolsa+r.produccion.tarrina;
-      grPres=(lecheL/100)*((72000*r.produccion.tetero+75000*r.produccion.bolsa+70000*r.produccion.tarrina)/totMix4);
-    }
-    // Comparativo
-    var comp = grPres > 0 ? grProd - grPres : 0;
-    var compColor = comp < 0 ? '#B03020' : comp === 0 ? '#2A6B4A' : '#C87533';
-    var compTxt = grPres > 0 ? (comp >= 0 ? '+' : '')+fmtN(Math.round(comp)) : '—';
-    // Costo por unidad producida
-    var totUnid = r.produccion.tetero + r.produccion.bolsa + r.produccion.tarrina;
-    var costoUnd = totUnid > 0 ? (r.costos?r.costos.total:0) / totUnid : 0;
-    var obsText = r.obs ? r.obs : '—';
+    var grPres=0;
+    if(r.produccion.tetero>0&&r.produccion.bolsa===0&&r.produccion.tarrina===0){ grPres=(lecheL/100)*72000; }
+    else if(r.produccion.bolsa>0&&r.produccion.tetero===0&&r.produccion.tarrina===0){ grPres=(lecheL/100)*75000; }
+    else if(r.produccion.tarrina>0&&r.produccion.tetero===0&&r.produccion.bolsa===0){ grPres=(lecheL/100)*70000; }
+    else if(r.produccion.tetero>0&&r.produccion.bolsa>0&&r.produccion.tarrina===0){ var tM1=r.produccion.tetero+r.produccion.bolsa; grPres=(lecheL/100)*((72000*r.produccion.tetero+75000*r.produccion.bolsa)/tM1); }
+    else if(r.produccion.tetero>0&&r.produccion.tarrina>0&&r.produccion.bolsa===0){ var tM2=r.produccion.tetero+r.produccion.tarrina; grPres=(lecheL/100)*((72000*r.produccion.tetero+70000*r.produccion.tarrina)/tM2); }
+    else if(r.produccion.bolsa>0&&r.produccion.tarrina>0&&r.produccion.tetero===0){ var tM3=r.produccion.bolsa+r.produccion.tarrina; grPres=(lecheL/100)*((75000*r.produccion.bolsa+70000*r.produccion.tarrina)/tM3); }
+    else if(r.produccion.tetero>0||r.produccion.bolsa>0||r.produccion.tarrina>0){ var tM4=r.produccion.tetero+r.produccion.bolsa+r.produccion.tarrina; grPres=(lecheL/100)*((72000*r.produccion.tetero+75000*r.produccion.bolsa+70000*r.produccion.tarrina)/tM4); }
+    var comp=grPres>0?grProd-grPres:0;
+    var compColor=comp<0?'#B03020':comp===0?'#2A6B4A':'#C87533';
+    var compTxt=grPres>0?(comp>=0?'+':'')+fmtN(Math.round(comp)):'—';
+    // Costos guardados en el registro
+    var cIns=r.costos?r.costos.insumos:0;
+    var cEmp=r.costos?r.costos.empaque:0;
+    var cGas=r.costos?r.costos.gas:0;
+    var cMO=r.costos?r.costos.mo:0;
+    var cTot=r.costos?r.costos.total:0;
+    // Costo unitario por presentacion
+    var cuA=r.costoUnit?r.costoUnit.tetero:0;
+    var cuB=r.costoUnit?r.costoUnit.bolsa:0;
+    var cuT=r.costoUnit?r.costoUnit.tarrina:0;
     h+='<tr>'+
       '<td>'+r.fecha+'</td>'+
       '<td>'+(r.lote||'—')+'</td>'+
@@ -1265,8 +1265,16 @@ function generarReporte(){
       '<td>'+fmtN(grProd)+'g</td>'+
       '<td>'+(grPres>0?fmtN(Math.round(grPres))+'g':'—')+'</td>'+
       '<td><strong style="color:'+compColor+'">'+compTxt+'</strong></td>'+
-      '<td><strong>'+fmt(costoUnd)+'</strong></td>'+
-      '<td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gris)">'+obsText+'</td>'+
+      '<td>'+fmt(cIns)+'</td>'+
+      '<td>'+fmt(cEmp)+'</td>'+
+      '<td>'+fmt(cGas)+'</td>'+
+      '<td>'+fmt(cMO)+'</td>'+
+      '<td><strong style="color:var(--cafe)">'+fmt(cTot)+'</strong></td>'+
+      '<td>'+(cuA>0&&r.produccion.tetero>0?fmt(cuA):'—')+'</td>'+
+      '<td>'+(cuB>0&&r.produccion.bolsa>0?fmt(cuB):'—')+'</td>'+
+      '<td>'+(cuT>0&&r.produccion.tarrina>0?fmt(cuT):'—')+'</td>'+
+      '<td style="max-width:100px;white-space:normal;font-size:.75rem;color:var(--gris)">'+(r.obs||'—')+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" onclick="verDesglose('+r.id+')" title="Ver desglose de costos">🧾</button></td>'+
       '</tr>';
   });
   h+='</tbody></table>';
@@ -1468,7 +1476,20 @@ function restaurar(input){
   };
   r.readAsText(file);
 }
-function borrarTodo(){ if(confirm('⚠ ¿Borrar TODOS los registros?')){ localStorage.removeItem('dm_ar_regs'); alert('Registros eliminados.'); renderInicio(); } }
+function borrarTodo(){
+  if(!confirm('⚠ ¿Borrar TODOS los registros de producción? Esta acción no se puede deshacer.')) return;
+  localStorage.removeItem('dm_ar_regs');
+  // Limpiar todas las tablas visibles
+  renderInicio();
+  renderTabla();
+  // Limpiar reportes
+  var kpi=gId('kpi-rep'); if(kpi) kpi.innerHTML='';
+  var tabRep=gId('tabla-rep'); if(tabRep) tabRep.innerHTML='<div class="empty"><div class="ei">📊</div><p>Sin registros. Genera el primer lote.</p></div>';
+  var desgloseCard=gId('rep-desglose-card'); if(desgloseCard) desgloseCard.style.display='none';
+  var ch1=gId('ch-rep-cost'); if(ch1&&window.chRepCost){ window.chRepCost.destroy(); window.chRepCost=null; }
+  var ch2=gId('ch-rep-prod'); if(ch2&&window.chRepProd){ window.chRepProd.destroy(); window.chRepProd=null; }
+  showAlert('al-cfg-datos','✅ Todos los registros fueron eliminados.');
+}
 
 /* ===== INVENTARIO ===== */
 function inv_getStock(){ try{ return JSON.parse(localStorage.getItem('dm_ar_inv')||'{}'); }catch(e){ return {}; } }
@@ -1905,6 +1926,152 @@ function prod_renderHist(){
   });
   h+='</tbody></table>';
   if(gId('tabla-prod-hist')) gId('tabla-prod-hist').innerHTML=h;
+}
+
+/* ===== DESGLOSE DETALLADO DE COSTOS POR LOTE ===== */
+function verDesglose(id){
+  var arr=getRegistros();
+  var r=arr.filter(function(x){ return x.id===id; })[0];
+  if(!r){ return; }
+  var p=getPrecios();
+  var cTot=r.costos?r.costos.total:0;
+  var cIns=r.costos?r.costos.insumos:0;
+  var cEmp=r.costos?r.costos.empaque:0;
+  var cGas=r.costos?r.costos.gas:0;
+  var cMO=r.costos?r.costos.mo:0;
+  var cFij=r.costos?r.costos.fijos||0:0;
+
+  // Titulo
+  gId('desglose-titulo').textContent=(r.lote||r.fecha)+' · '+r.fecha;
+
+  var html='';
+
+  // --- Cabecera resumen ---
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:16px">';
+  var comps=[
+    {n:'Insumos',v:cIns,c:'var(--caramelo)'},
+    {n:'Empaques',v:cEmp,c:'var(--miel)'},
+    {n:'Gas + Energía',v:cGas,c:'#7a9b7a'},
+    {n:'Mano de obra',v:cMO,c:'var(--cafe2)'},
+    {n:'Fijos',v:cFij,c:'var(--gris)'},
+    {n:'TOTAL LOTE',v:cTot,c:'var(--cafe)',bold:true}
+  ];
+  comps.forEach(function(c){
+    var pct=cTot>0?(c.v/cTot*100):0;
+    html+='<div style="background:var(--crema);border-radius:8px;padding:10px;text-align:center">'+
+      '<div style="font-size:.68rem;color:var(--gris);text-transform:uppercase">'+c.n+'</div>'+
+      '<div style="font-family:\'Playfair Display\',serif;font-size:'+(c.bold?'1.1rem':'1rem')+';font-weight:700;color:'+c.c+'">'+fmt(c.v)+'</div>'+
+      (c.bold?'':'<div style="font-size:.72rem;color:'+c.c+'">'+pct.toFixed(1)+'%</div>')+
+      '</div>';
+  });
+  html+='</div>';
+
+  // --- Desglose por insumo ---
+  html+='<div style="font-size:.75rem;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Detalle de materias primas</div>';
+  html+='<div class="inc-row inc-header"><span>Insumo</span><span>Cantidad</span><span>$/unit</span><span>Valor</span><span>% del lote</span></div>';
+
+  var insFilas=[];
+  INSUMOS_DEF.forEach(function(ins){
+    var cant=r.insumos?r.insumos[ins.id]||0:0;
+    if(cant<=0) return;
+    var precio=p[ins.id]||ins.precio;
+    var valor=cant*precio;
+    var pct=cTot>0?(valor/cTot*100):0;
+    insFilas.push({nombre:ins.nombre||ins.id,unidad:ins.unidad,cant:cant,precio:precio,valor:valor,pct:pct});
+  });
+  // Ordenar por valor descendente
+  insFilas.sort(function(a,b){ return b.valor-a.valor; });
+  var maxPct=insFilas.length>0?insFilas[0].pct:1;
+
+  insFilas.forEach(function(f){
+    var barW=Math.round((f.pct/Math.max(maxPct,1))*120);
+    var barColor=f.pct>20?'var(--rojo)':f.pct>10?'var(--caramelo)':'var(--verde)';
+    html+='<div class="inc-row">'+
+      '<span><strong>'+f.nombre+'</strong></span>'+
+      '<span>'+fmtN(Math.round(f.cant*10)/10)+' '+f.unidad+'</span>'+
+      '<span>'+fmt(f.precio)+'</span>'+
+      '<span style="font-weight:600">'+fmt(f.valor)+'</span>'+
+      '<span><span class="barra-inc" style="width:'+barW+'px;background:'+barColor+'"></span> '+f.pct.toFixed(1)+'%</span>'+
+      '</div>';
+  });
+
+  // Subtotal insumos
+  var pctIns=cTot>0?(cIns/cTot*100):0;
+  html+='<div class="inc-row" style="background:var(--crema);font-weight:700;margin-top:4px">'+
+    '<span>Subtotal insumos</span><span></span><span></span>'+
+    '<span style="color:var(--caramelo)">'+fmt(cIns)+'</span>'+
+    '<span style="color:var(--caramelo)">'+pctIns.toFixed(1)+'% del lote</span>'+
+    '</div>';
+
+  // --- Empaques y adhesivos ---
+  html+='<div style="font-size:.75rem;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px">Empaques y adhesivos</div>';
+  html+='<div class="inc-row inc-header"><span>Ítem</span><span>Unidades</span><span>$/und</span><span>Valor</span><span>% del lote</span></div>';
+
+  var prod=r.produccion||{tetero:0,bolsa:0,tarrina:0};
+  EMPAQUES_DEF.forEach(function(e){
+    var u=prod[e.campo]||0;
+    if(u<=0) return;
+    var precio=p[e.id]||e.precio;
+    var valor=u*precio;
+    var pct=cTot>0?(valor/cTot*100):0;
+    var barW=Math.round((pct/Math.max(maxPct,1))*120);
+    html+='<div class="inc-row">'+
+      '<span><strong>'+e.nombre+'</strong></span>'+
+      '<span>'+fmtN(u)+' und</span>'+
+      '<span>'+fmt(precio)+'</span>'+
+      '<span style="font-weight:600">'+fmt(valor)+'</span>'+
+      '<span><span class="barra-inc" style="width:'+barW+'px;background:var(--miel)"></span> '+pct.toFixed(1)+'%</span>'+
+      '</div>';
+  });
+
+  var pctEmp=cTot>0?(cEmp/cTot*100):0;
+  html+='<div class="inc-row" style="background:var(--crema);font-weight:700;margin-top:4px">'+
+    '<span>Subtotal empaques</span><span></span><span></span>'+
+    '<span style="color:var(--miel)">'+fmt(cEmp)+'</span>'+
+    '<span style="color:var(--miel)">'+pctEmp.toFixed(1)+'% del lote</span>'+
+    '</div>';
+
+  // --- Gas, MO y Fijos ---
+  html+='<div style="font-size:.75rem;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px">Otros costos</div>';
+  var otros=[
+    {n:'Gas + Energía',v:cGas,pct:cTot>0?(cGas/cTot*100):0},
+    {n:'Mano de obra (Ángel + Tony)',v:cMO,pct:cTot>0?(cMO/cTot*100):0},
+    {n:'Costos fijos (arriendo + otros)',v:cFij,pct:cTot>0?(cFij/cTot*100):0}
+  ];
+  html+='<div class="inc-row inc-header"><span>Concepto</span><span></span><span></span><span>Valor</span><span>% del lote</span></div>';
+  otros.forEach(function(o){
+    var barW=Math.round((o.pct/Math.max(maxPct,1))*120);
+    html+='<div class="inc-row">'+
+      '<span><strong>'+o.n+'</strong></span><span></span><span></span>'+
+      '<span style="font-weight:600">'+fmt(o.v)+'</span>'+
+      '<span><span class="barra-inc" style="width:'+barW+'px;background:var(--cafe2)"></span> '+o.pct.toFixed(1)+'%</span>'+
+      '</div>';
+  });
+
+  // --- Costo por unidad por presentacion ---
+  html+='<div style="font-size:.75rem;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px">Costo unitario por presentación</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">';
+  var pres=[
+    {n:'Aplicador 400g',tipo:'tetero',cu:r.costoUnit?r.costoUnit.tetero:0,pvp:r.pvp?r.pvp.tetero:0},
+    {n:'Bolsa 500g',tipo:'bolsa',cu:r.costoUnit?r.costoUnit.bolsa:0,pvp:r.pvp?r.pvp.bolsa:0},
+    {n:'Tarrina 220g',tipo:'tarrina',cu:r.costoUnit?r.costoUnit.tarrina:0,pvp:r.pvp?r.pvp.tarrina:0}
+  ];
+  pres.forEach(function(pr){
+    var u=prod[pr.tipo]||0; if(u<=0||!pr.cu) return;
+    html+='<div style="background:var(--crema);border-radius:8px;padding:12px;text-align:center">'+
+      '<div style="font-size:.7rem;color:var(--gris);text-transform:uppercase">'+pr.n+'</div>'+
+      '<div style="font-size:.72rem;color:var(--gris);margin-top:4px">'+fmtN(u)+' unidades</div>'+
+      '<div style="font-family:\'Playfair Display\',serif;font-size:1.1rem;font-weight:700;color:var(--verde);margin-top:6px">'+fmt(pr.cu)+'</div>'+
+      '<div style="font-size:.7rem;color:var(--gris)">costo unitario</div>'+
+      (pr.pvp>0?'<div style="font-family:\'Playfair Display\',serif;font-size:1rem;font-weight:700;color:var(--caramelo);margin-top:6px">'+fmt(pr.pvp)+'</div><div style="font-size:.7rem;color:var(--gris)">PVP sugerido</div>':'')+
+      '</div>';
+  });
+  html+='</div>';
+
+  gId('desglose-contenido').innerHTML=html;
+  gId('card-desglose').style.display='block';
+  // Scroll al desglose
+  setTimeout(function(){ gId('card-desglose').scrollIntoView({behavior:'smooth',block:'start'}); },100);
 }
 
 document.addEventListener('DOMContentLoaded',function(){
